@@ -1,14 +1,16 @@
-import express from "express";
+import { addDoc, collection, doc, updateDoc } from "@firebase/firestore";
+import express, { Request, Response } from "express";
 import {
   deleteObject,
   getDownloadURL,
   getMetadata,
+  getStorage,
   ref,
   uploadBytes,
 } from "firebase/storage";
 import multer from "multer";
+import { v4 as uuidv4 } from "uuid";
 import { firestore, storage } from "../config/firebaseConfig";
-import { doc, updateDoc } from "@firebase/firestore";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -49,45 +51,108 @@ router.delete("/deleteImage", async (req, res) => {
   }
 });
 
-router.delete("/deleteImgAd", async (req, res) => {
-  const images = req.body;
+router.post(
+  "/updatePhotoUser",
+  upload.single("image"),
+  async (req: Request, res: Response) => {
+    try {
+      const { currentUid } = await req.body;
+      if (!req.file) {
+        res.status(400).send({ error: "Arquivo não enviado." });
+        return;
+      }
+      // usando o uid do usuário como path
+      const uploadRef = ref(storage, `profileUser/${currentUid}`);
+      // convertendo o arquivo para imagem
+      const metadata = { contentType: req.file.mimetype };
+      // salvando a imagem na storage
+      await uploadBytes(uploadRef, req.file.buffer, metadata);
+      // baixando a imagem
+      const download = await getDownloadURL(uploadRef);
+      // salvando a imagem no nó do usuário
+      await updateDoc(doc(firestore, "users", currentUid), {
+        urlPhoto: download,
+      });
 
-  images.map(async (image: any) => {
-    const imagePath = `images/${image.uid}/${image.name}`;
-    const imageRef = ref(storage, imagePath);
-    await deleteObject(imageRef)
-      .then(() =>
-        res.status(200).send({ message: "Imagem excluída com sucesso!" })
-      )
-      .catch((error) => res.status(400).send(error));
-  });
-});
-
-router.post("/updatePhotoUser", upload.single("image"), async (req, res) => {
-  try {
-    const { currentUid } = await req.body;
-    if (!req.file) {
-      res.status(400).send({ error: "Arquivo não enviado." });
-      return;
+      res.status(200).send({ message: "Imagem salva com sucesso!" });
+    } catch (error) {
+      res.status(400).send(error);
     }
-    // usando o uid do usuário como path
-    const uploadRef = ref(storage, `profileUser/${currentUid}`);
-    // convertendo o arquivo para imagem
-    const metadata = { contentType: req.file.mimetype };
-    // salvando a imagem na storage
-    await uploadBytes(uploadRef, req.file.buffer, metadata);
-    // baixando a imagem
-    const download = await getDownloadURL(uploadRef);
-    // salvando a imagem no nó do usuário
-    await updateDoc(doc(firestore, "users", currentUid), {
-      urlPhoto: download,
-    });
-
-    res.status(200).send({ message: "Imagem salva com sucesso!" });
-  } catch (error) {
-    res.status(400).send(error);
   }
-});
+);
+
+router.post(
+  "/registerAd",
+  upload.array("images", 10),
+  async (req: Request, res: Response) => {
+    try {
+      const data = req.body;
+      const files = req.files as Express.Multer.File[];
+
+      if (!files || files.length === 0) {
+        res.status(400).send({ error: "Nenhum arquivo foi enviado." });
+        return;
+      }
+
+      const storage = getStorage();
+
+      // Upload das imagens
+      const uploadedImages = await Promise.all(
+        files.map(async (file) => {
+          const imageName = `${uuidv4()}_${file.originalname}`;
+          const storagePath = `images/${data.uidUser}/${imageName}`;
+
+          const storageRef = ref(storage, storagePath);
+
+          const metadata = { contentType: file.mimetype };
+          await uploadBytes(storageRef, file.buffer, metadata);
+
+          const downloadURL = await getDownloadURL(storageRef);
+
+          return {
+            name: imageName,
+            uid: data.uidUser,
+            url: downloadURL,
+          };
+        })
+      );
+
+      // Dados gerais
+      const carDoc = {
+        name: data.name,
+        model: data.model,
+        whatsapp: data.whatsapp,
+        city: data.city,
+        uf: data.uf,
+        year: data.year,
+        km: data.km,
+        price: data.price,
+        description: data.description,
+        created: new Date().toISOString(),
+        owner: data.owner,
+        uidUser: data.uidUser,
+        images: uploadedImages,
+        fuel: data.fuel,
+        transmission: data.transmission,
+        engine: data.engine,
+        documentationStatus: data.documentationStatus,
+        maintenanceHistory: data.maintenanceHistory,
+        generalCondition: data.generalCondition,
+      };
+
+      // Salvar no Firestore
+      const docRef = await addDoc(collection(firestore, "cars"), carDoc);
+
+      res.status(200).send({
+        message: "Anúncio cadastrado com sucesso!",
+        id: docRef.id,
+      });
+    } catch (error) {
+      console.error("Erro no processamento da requisição:", error);
+      res.status(500).send({ message: "Erro interno no servidor", error });
+    }
+  }
+);
 
 router.delete("/deletePhotoUser", async (req, res) => {
   try {

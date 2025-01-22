@@ -1,5 +1,4 @@
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -8,10 +7,13 @@ import {
   updateDoc,
 } from "@firebase/firestore";
 import express from "express";
-import { firestore } from "../config/firebaseConfig";
+import multer from "multer";
+import { firestore, storage } from "../config/firebaseConfig";
 import { ICarList, IFormNewCar, ISliders_Home } from "../models";
+import { deleteObject, ref } from "@firebase/storage";
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 router.get("/carDetails/:id", async (req, res) => {
   const { id } = req.params;
@@ -103,42 +105,25 @@ router.get("/sliders", async (req, res) => {
     .catch((error) => res.status(400).send(error));
 });
 
-router.post("/registerCar", async (req, res) => {
-  const data: IFormNewCar = req.body;
-
-  await addDoc(collection(firestore, "cars"), {
-    name: data.name,
-    model: data.model,
-    whatsapp: data.whatsapp,
-    city: data.city,
-    uf: data.uf,
-    year: data.year,
-    km: data.km,
-    price: data.price,
-    description: data.description,
-    created: new Date().toLocaleDateString(),
-    owner: data.owner,
-    uidUser: data.uidUser,
-    images: data.images,
-    fuel: data.fuel,
-    transmission: data.transmission,
-    engine: data.engine,
-    documentationStatus: data.documentationStatus,
-    maintenanceHistory: data.maintenanceHistory,
-    generalCondition: data.generalCondition,
-  })
-    .then((data) => res.status(200).send(data))
-    .catch((error) => res.status(400).send(error));
-});
-
 router.delete("/deleteAd/:id", async (req, res) => {
-  const { id } = req.params;
+  try {
+    const { imgList } = req.body;
+    const { id } = req.params;
 
-  const docRef = doc(firestore, "cars", id);
+    const docRef = doc(firestore, "cars", id);
+    await deleteDoc(docRef);
 
-  await deleteDoc(docRef)
-    .then(() => res.status(200).send({ message: "Item excluído com sucesso!" }))
-    .catch((error) => res.status(400).send(error));
+    imgList.map(async (item: any) => {
+      const imagePath = `images/${item.uid}/${item.name}`;
+      const imageRef = ref(storage, imagePath);
+      await deleteObject(imageRef).catch((error) => {
+        return res.status(400).send(error);
+      });
+    });
+    res.status(200).send({ message: "Anúncio deletado com sucesso!" });
+  } catch (error: any) {
+    res.status(400).send(error.message);
+  }
 });
 
 router.patch("/updatePhoneUser", async (req, res) => {
