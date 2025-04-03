@@ -119,8 +119,8 @@ router.post(
 
       // Dados gerais
       const carDoc = {
-        name: data.name,
-        model: data.model,
+        name: String(data.name).toUpperCase(),
+        model: String(data.model).toUpperCase(),
         whatsapp: data.whatsapp,
         city: data.city,
         uf: data.uf,

@@ -5,6 +5,8 @@ import {
   getDoc,
   getDocs,
   updateDoc,
+  query,
+  where,
 } from "@firebase/firestore";
 import express from "express";
 import multer from "multer";
@@ -148,6 +150,41 @@ router.patch("/updateAddressUser", async (req, res) => {
     .then(() =>
       res.status(200).send({ message: "Endereço atualizado com sucesso!" })
     )
+    .catch((error) => res.status(400).send(error));
+});
+
+router.get("/searchCar", async (req, res) => {
+  const inputCar = req.query.inputCar as string;
+
+  const carRef = query(
+    collection(firestore, "cars"),
+    where("name", ">=", inputCar.toUpperCase()),
+    where("name", "<=", inputCar.toUpperCase() + "\uf8ff")
+  );
+
+  await getDocs(carRef)
+    .then((snapshot) => {
+      let list: ICarList[] = [];
+
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        list.push({
+          city: data.city,
+          uf: data.uf,
+          uidUser: data.uidUser,
+          model: data.model,
+          id: doc.id,
+          name: data.name,
+          year: data.year,
+          price: parseFloat(data.price).toLocaleString("pt-BR", {
+            minimumFractionDigits: 2,
+          }),
+          km: parseFloat(data.km).toLocaleString("pt-BR"),
+          images: data.images?.[0]?.url || null,
+        });
+      });
+      return res.status(200).send(list as ICarList[]);
+    })
     .catch((error) => res.status(400).send(error));
 });
 
