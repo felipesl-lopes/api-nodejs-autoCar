@@ -7,6 +7,9 @@ import {
   updateDoc,
   query,
   where,
+  setDoc,
+  arrayUnion,
+  arrayRemove,
 } from "@firebase/firestore";
 import express from "express";
 import multer from "multer";
@@ -186,6 +189,98 @@ router.get("/searchCar", async (req, res) => {
       return res.status(200).send(list as ICarList[]);
     })
     .catch((error) => res.status(400).send(error));
+});
+
+router.post("/favorite", async (req, res) => {
+  const { uidUser, idCar } = req.body;
+
+  const docRef = doc(firestore, "favorite", uidUser);
+  const docSnap = await getDoc(docRef);
+
+  if (!docSnap.exists()) {
+    await setDoc(docRef, {
+      uidCar: [idCar],
+    });
+  } else {
+    await updateDoc(docRef, {
+      uidCar: arrayUnion(idCar),
+    });
+  }
+
+  res.status(200).send("Carro adicionado aos favoritos.");
+});
+
+router.delete("/favorite", async (req, res) => {
+  const { uidUser, idCar } = req.body;
+
+  const docRef = doc(firestore, "favorite", uidUser);
+
+  await updateDoc(docRef, {
+    uidCar: arrayRemove(idCar),
+  });
+
+  res.status(200).send("Carro removido dos favoritos.");
+});
+
+router.get("/favorite", async (req: any, res: any) => {
+  const { uidUser, idCar } = req.query;
+
+  const docRef = doc(firestore, "favorite", uidUser);
+  const docSnap = await getDoc(docRef);
+
+  if (!docSnap.exists()) {
+    return res.status(200).json({ favorite: false });
+  }
+
+  const uidCarList = docSnap.data().uidCar || [];
+  const isFavorite = uidCarList.includes(idCar);
+
+  res.status(200).json({ favorite: isFavorite });
+});
+
+router.get("/carList/favorites", async (req, res: any) => {
+  const { uidUser } = req.query;
+
+  try {
+    // Pega a lista de IDs favoritados
+    const favRef = doc(firestore, "favorite", uidUser as string);
+    const favSnap = await getDoc(favRef);
+
+    if (!favSnap.exists()) {
+      return res.status(200).json([]);
+    }
+
+    const uidCarList: string[] = favSnap.data().uidCar || [];
+
+    // Agora busca todos os veículos
+    const carRef = collection(firestore, "cars");
+    const snapshot = await getDocs(carRef);
+
+    const list: ICarList[] = [];
+
+    snapshot.forEach((doc) => {
+      if (uidCarList.includes(doc.id)) {
+        list.push({
+          city: doc.data().city,
+          uf: doc.data().uf,
+          uidUser: doc.data().uidUser,
+          model: doc.data().model,
+          id: doc.id,
+          name: doc.data().name,
+          year: doc.data().year,
+          price: parseFloat(doc.data().price).toLocaleString("pt-BR", {
+            minimumFractionDigits: 2,
+          }),
+          km: parseFloat(doc.data().km).toLocaleString("pt-BR"),
+          images: doc.data().images[0].url,
+        });
+      }
+    });
+
+    return res.status(200).json(list);
+  } catch (error) {
+    return res.status(500).json({ error: "Erro ao buscar favoritos." });
+  }
 });
 
 export default router;
